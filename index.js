@@ -50,15 +50,18 @@ const detectedExecPath = getExecutablePath();
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
+        headless: true,
         executablePath: detectedExecPath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-gpu',
+            '--disable-accelerated-2d-canvas',
             '--no-first-run',
-            '--no-zygote',
-            '--single-process'
+            '--no-default-browser-check',
+            '--disable-gpu',
+            '--disable-extensions',
+            '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process'
         ]
     }
 });
