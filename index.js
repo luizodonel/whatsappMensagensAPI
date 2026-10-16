@@ -29,6 +29,14 @@ const client = new Client({
     }
 });
 
+const logs = [];
+function addLog(msg) {
+    const entry = `[${new Date().toISOString()}] ${msg}`;
+    console.log(entry);
+    logs.push(entry);
+    if (logs.length > 100) logs.shift();
+}
+
 let qrCodeData = null;
 let isConnected = false;
 let campaignProgress = {
@@ -38,20 +46,32 @@ let campaignProgress = {
     inProgress: false
 };
 
+client.on('loading_screen', (percent, message) => {
+    addLog(`Loading screen: ${percent}% - ${message}`);
+});
+
 client.on('qr', (qr) => {
-    console.log('QR Code generated. Scan it with your phone:');
+    addLog('QR Code gerado com sucesso!');
     qrcode.generate(qr, { small: true });
     qrCodeData = qr;
 });
 
+client.on('authenticated', () => {
+    addLog('WhatsApp autenticado com sucesso!');
+});
+
+client.on('auth_failure', (msg) => {
+    addLog(`Falha de autenticação: ${msg}`);
+});
+
 client.on('ready', () => {
-    console.log('WhatsApp is ready!');
+    addLog('WhatsApp está pronto (ready)!');
     isConnected = true;
     qrCodeData = null;
 });
 
 client.on('disconnected', (reason) => {
-    console.log('WhatsApp was disconnected:', reason);
+    addLog(`WhatsApp desconectado: ${reason}`);
     isConnected = false;
 });
 
@@ -98,7 +118,11 @@ client.on('message', async msg => {
     }
 });
 
-client.initialize().catch(err => {
+addLog('Chamando client.initialize()...');
+client.initialize().then(() => {
+    addLog('client.initialize() concluído com sucesso.');
+}).catch(err => {
+    addLog(`ERRO em client.initialize(): ${err.message || err}`);
     console.error('Erro ao inicializar WhatsApp Client:', err);
 });
 
@@ -108,6 +132,15 @@ app.get('/api/status', (req, res) => {
         connected: isConnected,
         qrCode: qrCodeData,
         campaign: campaignProgress
+    });
+});
+
+app.get('/api/debug', (req, res) => {
+    res.json({
+        logs,
+        isConnected,
+        hasQr: !!qrCodeData,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || 'default'
     });
 });
 
