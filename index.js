@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -98,7 +98,9 @@ client.on('message', async msg => {
     }
 });
 
-client.initialize();
+client.initialize().catch(err => {
+    console.error('Erro ao inicializar WhatsApp Client:', err);
+});
 
 // Routes
 app.get('/api/status', (req, res) => {
@@ -251,6 +253,6 @@ app.post('/api/send', upload.array('images'), async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server running at http://0.0.0.0:${port}`);
 });
