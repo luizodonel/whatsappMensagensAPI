@@ -5,6 +5,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,11 +20,23 @@ function getExecutablePath() {
     if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
         return process.env.PUPPETEER_EXECUTABLE_PATH;
     }
+    try {
+        const whichOut = execSync('which chromium || which chromium-browser || which google-chrome || which google-chrome-stable', {
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'ignore']
+        }).trim().split(/\r?\n/)[0];
+        if (whichOut && fs.existsSync(whichOut)) {
+            return whichOut;
+        }
+    } catch (e) {}
+
     const candidatePaths = [
         '/usr/bin/chromium',
         '/usr/bin/chromium-browser',
         '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable'
+        '/usr/bin/google-chrome-stable',
+        '/root/.nix-profile/bin/chromium',
+        '/nix/var/nix/profiles/default/bin/chromium'
     ];
     for (const p of candidatePaths) {
         if (fs.existsSync(p)) return p;
@@ -31,16 +44,21 @@ function getExecutablePath() {
     return undefined;
 }
 
+const detectedExecPath = getExecutablePath();
+
 // WhatsApp Client
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: getExecutablePath(),
+        executablePath: detectedExecPath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process'
         ]
     }
 });
@@ -134,6 +152,7 @@ client.on('message', async msg => {
     }
 });
 
+addLog(`Executável detectado: ${detectedExecPath || 'padrão (Puppeteer Cache)'}`);
 addLog('Chamando client.initialize()...');
 client.initialize().then(() => {
     addLog('client.initialize() concluído com sucesso.');
@@ -152,12 +171,37 @@ app.get('/api/status', (req, res) => {
 });
 
 app.get('/api/debug', (req, res) => {
+    const candidatePaths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/root/.nix-profile/bin/chromium',
+        '/nix/var/nix/profiles/default/bin/chromium'
+    ];
+    const pathChecks = {};
+    for (const p of candidatePaths) {
+        pathChecks[p] = fs.existsSync(p);
+    }
     res.json({
         logs,
         isConnected,
         hasQr: !!qrCodeData,
-        executablePath: getExecutablePath() || 'default'
+        executablePath: detectedExecPath || 'default',
+        pathChecks,
+        envPuppeteerPath: process.env.PUPPETEER_EXECUTABLE_PATH || null
     });
+});
+
+app.get('/api/retry', async (req, res) => {
+    try {
+        addLog('Tentando reinicializar client via /api/retry...');
+        await client.initialize();
+        res.json({ success: true, message: 'Inicialização disparada com sucesso' });
+    } catch (e) {
+        addLog(`Falha no retry: ${e.message}`);
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
