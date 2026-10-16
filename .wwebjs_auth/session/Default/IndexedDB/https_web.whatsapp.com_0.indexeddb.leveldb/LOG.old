@@ -1,0 +1,14 @@
+2026/09/18-22:34:31.407 2ebc Creating DB D:\PROJETOS_GITHOUB\whatsapp-sender\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb since it was missing.
+2026/09/18-22:34:31.412 2ebc Reusing MANIFEST D:\PROJETOS_GITHOUB\whatsapp-sender\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/09/18-22:34:54.663 2ebc Level-0 table #5: started
+2026/09/18-22:34:54.683 2ebc Level-0 table #5: 1026781 bytes OK
+2026/09/18-22:34:54.689 2ebc Delete type=0 #3
+2026/09/18-22:35:05.499 2ebc Level-0 table #7: started
+2026/09/18-22:35:05.521 2ebc Level-0 table #7: 1049287 bytes OK
+2026/09/18-22:35:05.527 2ebc Delete type=0 #4
+2026/09/18-22:35:05.859 1364 Compacting 1@1 + 1@2 files
+2026/09/18-22:35:05.902 1364 Generated table #8@1: 20111 keys, 854526 bytes
+2026/09/18-22:35:05.903 1364 Compacted 1@1 + 1@2 files => 854526 bytes
+2026/09/18-22:35:05.906 1364 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/09/18-22:35:05.907 1364 Delete type=2 #5
+2026/09/18-22:35:05.907 1364 Delete type=2 #7

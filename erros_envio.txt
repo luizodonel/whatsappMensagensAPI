@@ -1,0 +1,32 @@
+5511993416681 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5511964945266 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5511993416681 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5511993416681 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5511993416681 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5511964945266 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+554797686670 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5521999354424 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5511971040571 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+553598793950 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5512983109119 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+557799380310 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+556192800679 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+5512991679404 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+553399280916 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)
+558182514924 - Erro: Data passed to getter must include an id property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/yL/r/6-eerGMZKhM.js:84:180)

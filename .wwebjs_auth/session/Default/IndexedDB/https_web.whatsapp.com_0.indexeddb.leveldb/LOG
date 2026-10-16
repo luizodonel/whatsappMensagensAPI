@@ -1,0 +1,12 @@
+2026/09/18-22:35:42.207 2ec0 Reusing MANIFEST D:\PROJETOS_GITHOUB\whatsapp-sender\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/09/18-22:35:42.208 2ec0 Recovering log #6
+2026/09/18-22:35:42.245 2ec0 Reusing old log D:\PROJETOS_GITHOUB\whatsapp-sender\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000006.log 
+2026/09/18-22:38:37.499 4cf4 Level-0 table #11: started
+2026/09/18-22:38:37.516 4cf4 Level-0 table #11: 1079228 bytes OK
+2026/09/18-22:38:37.520 4cf4 Delete type=0 #6
+2026/09/18-22:38:38.380 4cf4 Compacting 1@1 + 1@2 files
+2026/09/18-22:38:38.409 4cf4 Generated table #12@1: 26380 keys, 1103954 bytes
+2026/09/18-22:38:38.409 4cf4 Compacted 1@1 + 1@2 files => 1103954 bytes
+2026/09/18-22:38:38.413 4cf4 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/09/18-22:38:38.413 4cf4 Delete type=2 #8
+2026/09/18-22:38:38.413 4cf4 Delete type=2 #11
