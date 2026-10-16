@@ -15,11 +15,27 @@ app.use(express.json());
 // Setup multer for image upload
 const upload = multer({ dest: 'uploads/' });
 
+function getExecutablePath() {
+    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+    const candidatePaths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable'
+    ];
+    for (const p of candidatePaths) {
+        if (fs.existsSync(p)) return p;
+    }
+    return undefined;
+}
+
 // WhatsApp Client
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        executablePath: getExecutablePath(),
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -140,7 +156,7 @@ app.get('/api/debug', (req, res) => {
         logs,
         isConnected,
         hasQr: !!qrCodeData,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || 'default'
+        executablePath: getExecutablePath() || 'default'
     });
 });
 
