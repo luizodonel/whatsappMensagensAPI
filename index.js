@@ -48,7 +48,11 @@ const detectedExecPath = getExecutablePath();
 
 // WhatsApp Client
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({
+        dataPath: path.join(__dirname, '.wwebjs_auth')
+    }),
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 0,
     puppeteer: {
         headless: true,
         executablePath: detectedExecPath,
@@ -60,8 +64,7 @@ const client = new Client({
             '--no-first-run',
             '--no-default-browser-check',
             '--disable-gpu',
-            '--disable-extensions',
-            '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process'
+            '--disable-extensions'
         ]
     }
 });
@@ -76,6 +79,8 @@ function addLog(msg) {
 
 let qrCodeData = null;
 let isConnected = false;
+let isAuthenticated = false;
+let loadingPercent = null;
 let campaignProgress = {
     total: 0,
     sent: 0,
@@ -85,31 +90,62 @@ let campaignProgress = {
 
 client.on('loading_screen', (percent, message) => {
     addLog(`Loading screen: ${percent}% - ${message}`);
+    loadingPercent = percent;
+    qrCodeData = null; // Oculta o QR code para dar feedback imediato de que o escaneamento ocorreu
 });
 
 client.on('qr', (qr) => {
     addLog('QR Code gerado com sucesso!');
     qrcode.generate(qr, { small: true });
     qrCodeData = qr;
+    loadingPercent = null;
+    isAuthenticated = false;
+    isConnected = false;
 });
 
 client.on('authenticated', () => {
     addLog('WhatsApp autenticado com sucesso!');
+    isAuthenticated = true;
+    qrCodeData = null; // Limpa o QR code imediatamente
 });
 
 client.on('auth_failure', (msg) => {
     addLog(`Falha de autenticação: ${msg}`);
+    isAuthenticated = false;
+    isConnected = false;
+    loadingPercent = null;
 });
 
 client.on('ready', () => {
     addLog('WhatsApp está pronto (ready)!');
     isConnected = true;
+    isAuthenticated = true;
+    loadingPercent = null;
     qrCodeData = null;
 });
 
-client.on('disconnected', (reason) => {
+client.on('disconnected', async (reason) => {
     addLog(`WhatsApp desconectado: ${reason}`);
     isConnected = false;
+    isAuthenticated = false;
+    loadingPercent = null;
+    qrCodeData = null;
+
+    if (reason === 'LOGOUT') {
+        addLog('Limpando sessão antiga e reiniciando cliente...');
+        try {
+            const authDir = path.join(__dirname, '.wwebjs_auth');
+            if (fs.existsSync(authDir)) {
+                fs.rmSync(authDir, { recursive: true, force: true });
+            }
+        } catch (e) {}
+        try {
+            await client.destroy();
+        } catch (e) {}
+        setTimeout(() => {
+            client.initialize();
+        }, 2000);
+    }
 });
 
 const repliedContactsFile = path.join(__dirname, 'replied.json');
@@ -168,6 +204,8 @@ client.initialize().then(() => {
 app.get('/api/status', (req, res) => {
     res.json({
         connected: isConnected,
+        authenticated: isAuthenticated,
+        loadingPercent: loadingPercent,
         qrCode: qrCodeData,
         campaign: campaignProgress
     });
