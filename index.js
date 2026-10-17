@@ -46,29 +46,6 @@ function getExecutablePath() {
 
 const detectedExecPath = getExecutablePath();
 
-// WhatsApp Client
-const client = new Client({
-    authStrategy: new LocalAuth({
-        dataPath: path.join(__dirname, '.wwebjs_auth')
-    }),
-    takeoverOnConflict: true,
-    takeoverTimeoutMs: 0,
-    puppeteer: {
-        headless: true,
-        executablePath: detectedExecPath,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-gpu',
-            '--disable-extensions'
-        ]
-    }
-});
-
 const logs = [];
 function addLog(msg) {
     const entry = `[${new Date().toISOString()}] ${msg}`;
@@ -77,6 +54,7 @@ function addLog(msg) {
     if (logs.length > 100) logs.shift();
 }
 
+let client = null;
 let qrCodeData = null;
 let isConnected = false;
 let isAuthenticated = false;
@@ -88,76 +66,169 @@ let campaignProgress = {
     inProgress: false
 };
 
-client.on('loading_screen', (percent, message) => {
-    addLog(`Loading screen: ${percent}% - ${message}`);
-    loadingPercent = percent;
-    qrCodeData = null; // Oculta o QR code para dar feedback imediato de que o escaneamento ocorreu
-});
+function cleanSessionLocks() {
+    try {
+        const authDir = path.join(__dirname, '.wwebjs_auth');
+        if (!fs.existsSync(authDir)) return;
 
-client.on('qr', (qr) => {
-    addLog('QR Code gerado com sucesso!');
-    qrcode.generate(qr, { small: true });
-    qrCodeData = qr;
-    loadingPercent = null;
-    isAuthenticated = false;
-    isConnected = false;
-});
-
-client.on('authenticated', () => {
-    addLog('WhatsApp autenticado com sucesso!');
-    isAuthenticated = true;
-    qrCodeData = null; // Limpa o QR code imediatamente
-});
-
-client.on('auth_failure', (msg) => {
-    addLog(`Falha de autenticação: ${msg}`);
-    isAuthenticated = false;
-    isConnected = false;
-    loadingPercent = null;
-});
-
-client.on('ready', () => {
-    addLog('WhatsApp está pronto (ready)!');
-    isConnected = true;
-    isAuthenticated = true;
-    loadingPercent = null;
-    qrCodeData = null;
-});
-
-client.on('disconnected', async (reason) => {
-    addLog(`WhatsApp desconectado: ${reason}`);
-    isConnected = false;
-    isAuthenticated = false;
-    loadingPercent = null;
-    qrCodeData = null;
-
-    if (reason === 'LOGOUT') {
-        addLog('Limpando sessão antiga e reiniciando cliente...');
-        try {
-            const authDir = path.join(__dirname, '.wwebjs_auth');
-            if (fs.existsSync(authDir)) {
-                fs.rmSync(authDir, { recursive: true, force: true });
+        function removeLocksInDir(dir) {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    removeLocksInDir(fullPath);
+                } else if (entry.name.startsWith('Singleton')) {
+                    try {
+                        fs.unlinkSync(fullPath);
+                        addLog(`Arquivo de lock do Chromium removido: ${entry.name}`);
+                    } catch (e) {}
+                }
             }
-        } catch (e) {}
-        try {
-            await client.destroy();
-        } catch (e) {}
-        setTimeout(() => {
-            client.initialize();
-        }, 2000);
+        }
+        removeLocksInDir(authDir);
+    } catch (e) {
+        console.warn('Erro ao limpar locks do Chromium:', e.message);
     }
-});
+}
 
-// Auto-resposta desativada conforme solicitado
+function initWhatsAppClient() {
+    cleanSessionLocks();
 
+    client = new Client({
+        authStrategy: new LocalAuth({
+            dataPath: path.join(__dirname, '.wwebjs_auth')
+        }),
+        takeoverOnConflict: true,
+        takeoverTimeoutMs: 0,
+        authTimeoutMs: 120000, // 2 minutos para evitar erro de auth timeout em servidores lentos
+        qrMaxRetries: 10,
+        puppeteer: {
+            headless: true,
+            executablePath: detectedExecPath,
+            protocolTimeout: 300000, // 5 minutos de timeout no protocolo puppeteer
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process'
+            ]
+        }
+    });
+
+    client.on('loading_screen', (percent, message) => {
+        addLog(`Loading screen: ${percent}% - ${message}`);
+        loadingPercent = percent;
+        qrCodeData = null; // Oculta o QR code para dar feedback imediato de que o escaneamento ocorreu
+    });
+
+    client.on('qr', (qr) => {
+        addLog('QR Code gerado com sucesso!');
+        qrcode.generate(qr, { small: true });
+        qrCodeData = qr;
+        loadingPercent = null;
+        isAuthenticated = false;
+        isConnected = false;
+    });
+
+    client.on('authenticated', () => {
+        addLog('WhatsApp autenticado com sucesso!');
+        isAuthenticated = true;
+        qrCodeData = null; // Limpa o QR code imediatamente
+    });
+
+    client.on('auth_failure', async (msg) => {
+        addLog(`Falha de autenticação: ${msg}`);
+        isAuthenticated = false;
+        isConnected = false;
+        loadingPercent = null;
+        qrCodeData = null;
+        await resetAndRestartClient('Falha de autenticação detectada');
+    });
+
+    client.on('ready', () => {
+        addLog('WhatsApp está pronto (ready)!');
+        isConnected = true;
+        isAuthenticated = true;
+        loadingPercent = null;
+        qrCodeData = null;
+    });
+
+    client.on('disconnected', async (reason) => {
+        addLog(`WhatsApp desconectado: ${reason}`);
+        isConnected = false;
+        isAuthenticated = false;
+        loadingPercent = null;
+        qrCodeData = null;
+        await resetAndRestartClient(`Desconectado (${reason})`);
+    });
+}
+
+let isRestarting = false;
+async function resetAndRestartClient(reason = 'Reinicialização') {
+    if (isRestarting) {
+        addLog('Já existe uma reinicialização em andamento...');
+        return;
+    }
+    isRestarting = true;
+    addLog(`Iniciando reinicialização do cliente WhatsApp: ${reason}`);
+
+    qrCodeData = null;
+    isConnected = false;
+    isAuthenticated = false;
+    loadingPercent = null;
+
+    try {
+        if (client) {
+            await client.destroy();
+        }
+    } catch (e) {
+        console.warn('Erro ao destruir client:', e.message);
+    }
+
+    try {
+        const authDir = path.join(__dirname, '.wwebjs_auth');
+        if (fs.existsSync(authDir)) {
+            addLog('Limpando pasta .wwebjs_auth para restaurar estado limpo...');
+            fs.rmSync(authDir, { recursive: true, force: true });
+        }
+    } catch (e) {
+        console.warn('Erro ao remover .wwebjs_auth:', e.message);
+    }
+
+    cleanSessionLocks();
+    await delay(2000);
+
+    initWhatsAppClient();
+
+    try {
+        addLog('Chamando client.initialize() após reset...');
+        await client.initialize();
+        addLog('client.initialize() concluído com sucesso após reset.');
+    } catch (err) {
+        addLog(`ERRO ao inicializar após reset: ${err.message || err}`);
+    } finally {
+        isRestarting = false;
+    }
+}
+
+// Inicialização inicial
+initWhatsAppClient();
 
 addLog(`Executável detectado: ${detectedExecPath || 'padrão (Puppeteer Cache)'}`);
 addLog('Chamando client.initialize()...');
 client.initialize().then(() => {
     addLog('client.initialize() concluído com sucesso.');
-}).catch(err => {
+}).catch((err) => {
     addLog(`ERRO em client.initialize(): ${err.message || err}`);
     console.error('Erro ao inicializar WhatsApp Client:', err);
+    setTimeout(() => {
+        resetAndRestartClient(`Recuperação de falha inicial: ${err.message || err}`);
+    }, 3000);
 });
 
 // Routes
@@ -197,7 +268,7 @@ app.get('/api/debug', (req, res) => {
 app.get('/api/retry', async (req, res) => {
     try {
         addLog('Tentando reinicializar client via /api/retry...');
-        await client.initialize();
+        resetAndRestartClient('Disparado via /api/retry');
         res.json({ success: true, message: 'Inicialização disparada com sucesso' });
     } catch (e) {
         addLog(`Falha no retry: ${e.message}`);
