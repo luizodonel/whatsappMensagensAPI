@@ -148,48 +148,8 @@ client.on('disconnected', async (reason) => {
     }
 });
 
-const repliedContactsFile = path.join(__dirname, 'replied.json');
-if (!fs.existsSync(repliedContactsFile)) {
-    fs.writeFileSync(repliedContactsFile, JSON.stringify([]));
-}
+// Auto-resposta desativada conforme solicitado
 
-client.on('message', async msg => {
-    // Ignora mensagens de grupos ou status
-    if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
-    
-    // Ignora mensagens enviadas por você mesmo
-    if (msg.fromMe) return;
-
-    try {
-        const repliedContacts = JSON.parse(fs.readFileSync(repliedContactsFile, 'utf8'));
-        
-        // Se já respondemos a essa pessoa, ignoramos
-        if (repliedContacts.includes(msg.from)) return;
-        
-        // Função de delay local
-        const sleep = (ms) => new Promise(res => setTimeout(res, ms));
-        
-        // Simular que está digitando para parecer mais humano
-        try {
-            const chat = await msg.getChat();
-            await chat.sendStateTyping();
-            await sleep(3000); // Aguarda 3 segundos digitando
-            await chat.clearState();
-        } catch (e) {
-            console.log('Não foi possível simular digitação (erro do wwebjs):', e.message);
-        }
-        
-        const replyMsg = "Que ótimo! 🚀\n\nAqui está o seu link de acesso exclusivo para ver como a ferramenta funciona na prática. Aproveite enquanto o sistema ainda está com os testes liberados:\n\n👉 https://www.sinaiscassino.com.br\n\nSe tiver qualquer dúvida sobre a plataforma, é só me chamar por aqui!";
-        await msg.reply(replyMsg);
-        
-        // Salva que já enviamos para não mandar de novo
-        repliedContacts.push(msg.from);
-        fs.writeFileSync(repliedContactsFile, JSON.stringify(repliedContacts, null, 2));
-        console.log(`Auto-resposta com link enviada para ${msg.from}`);
-    } catch (err) {
-        console.error('Erro na auto-resposta:', err);
-    }
-});
 
 addLog(`Executável detectado: ${detectedExecPath || 'padrão (Puppeteer Cache)'}`);
 addLog('Chamando client.initialize()...');
@@ -247,144 +207,177 @@ app.get('/api/retry', async (req, res) => {
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
+function formatPhoneNumber(num) {
+    if (!num) return null;
+    let clean = String(num).replace(/\D/g, '');
+    if (!clean) return null;
+    // Se tiver 10 ou 11 dígitos (DDD + número brasileiro, ex: 61982261155), adiciona o DDI 55
+    if (clean.length === 10 || clean.length === 11) {
+        clean = '55' + clean;
+    }
+    return clean;
+}
+
+async function resolveWhatsAppId(client, number) {
+    // 1. Tenta getNumberId direto
+    try {
+        const contactId = await client.getNumberId(number);
+        if (contactId && contactId._serialized) {
+            return contactId._serialized;
+        }
+    } catch (e) {
+        console.warn(`getNumberId direto falhou para ${number}: ${e.message}`);
+    }
+
+    // 2. Se for número brasileiro com 55 e 13 dígitos (55 + DDD + 9 + 8 dígitos), tenta sem o 9
+    if (number.length === 13 && number.startsWith('55')) {
+        const without9 = number.slice(0, 4) + number.slice(5);
+        try {
+            const contactId = await client.getNumberId(without9);
+            if (contactId && contactId._serialized) {
+                return contactId._serialized;
+            }
+        } catch (e) {}
+    } else if (number.length === 12 && number.startsWith('55')) {
+        // Se tem 12 dígitos, tenta com 9
+        const with9 = number.slice(0, 4) + '9' + number.slice(4);
+        try {
+            const contactId = await client.getNumberId(with9);
+            if (contactId && contactId._serialized) {
+                return contactId._serialized;
+            }
+        } catch (e) {}
+    }
+
+    // 3. Fallback direto para @c.us
+    return `${number}@c.us`;
+}
+
 app.post('/api/send', upload.array('images'), async (req, res) => {
     if (!isConnected) {
-        return res.status(400).json({ error: 'WhatsApp is not connected' });
+        return res.status(400).json({ error: 'WhatsApp não está conectado' });
     }
 
     if (campaignProgress.inProgress) {
-        return res.status(400).json({ error: 'A campaign is already running' });
+        return res.status(400).json({ error: 'Já existe um envio em andamento' });
     }
 
-    const { description, link } = req.body;
+    const { description, message, numbers } = req.body;
     const files = req.files;
+    const textToSend = (message !== undefined ? message : description) || '';
 
-    try {
-        // Load contacts
-        const contactsPath = path.join(__dirname, 'contacts.json');
-        const contacts = JSON.parse(fs.readFileSync(contactsPath, 'utf8'));
+    // Obter lista de números
+    let rawNumbers = [];
+    if (typeof numbers === 'string') {
+        rawNumbers = numbers.split(/[,;\n\r]+/).map(n => n.trim()).filter(Boolean);
+    } else if (Array.isArray(numbers)) {
+        rawNumbers = numbers.map(n => String(n).trim()).filter(Boolean);
+    }
 
-        console.log(`Starting campaign to ${contacts.length} contacts...`);
-        
-        campaignProgress = {
-            total: contacts.length,
-            sent: 0,
-            currentNumber: null,
-            inProgress: true
-        };
-        
-        // Respond to frontend immediately, and process in background
-        res.json({ message: 'Campaign started', total: contacts.length });
+    // Validação estrita: apenas dispara para números explicitamente fornecidos
+    if (rawNumbers.length === 0) {
+        return res.status(400).json({ error: 'Nenhum número foi informado. Insira os números separados por vírgula no campo de destinatários.' });
+    }
 
-        const spintaxMessages = [
-            "Olá! 🚀 Conheça nossa nova plataforma 100% gratuita! Aqui você tem acesso a sinais de cassino 100% grátis e pode jogar direto na plataforma, sem complicações. Para acessar agora, é só clicar neste link:\n👉 https://www.sinaiscassino.com.br",
-            "Oi! 🎁 Sabia que agora temos uma plataforma 100% gratuita? Nela você recebe sinais de cassino totalmente grátis e já pode jogar direto pelo próprio sistema. Clique no link para conferir:\n👉 https://www.sinaiscassino.com.br",
-            "Tudo bem? 💰 Descubra a nossa plataforma 100% gratuita! Receba sinais de cassino 100% grátis em tempo real e jogue direto dentro do nosso ambiente. Para testar na prática, é só acessar o link:\n👉 https://www.sinaiscassino.com.br",
-            "Boa notícia! 🎉 Liberamos uma plataforma 100% gratuita onde você pega sinais de cassino totalmente grátis e consegue jogar direto por lá. É tudo em um só lugar. Acesse agora clicando no link:\n👉 https://www.sinaiscassino.com.br",
-            "Olá! 🏆 Venha conhecer a nossa plataforma que é 100% gratuita! Você vai ter acesso a sinais de cassino 100% grátis e a facilidade de jogar direto na plataforma. Para liberar o seu acesso, basta clicar no link:\n👉 https://www.sinaiscassino.com.br",
-            "Oi! 📊 Estamos com uma plataforma 100% gratuita incrível. Lá você tem sinais de cassino 100% grátis e joga diretamente na plataforma. Quer ver como é? É só clicar no link e acessar:\n👉 https://www.sinaiscassino.com.br"
-        ];
+    const cleanedNumbers = [];
+    for (const num of rawNumbers) {
+        const formatted = formatPhoneNumber(num);
+        if (formatted && !cleanedNumbers.includes(formatted)) {
+            cleanedNumbers.push(formatted);
+        }
+    }
 
-        for (let i = 0; i < contacts.length; i++) {
-            const number = contacts[i];
-            const formattedNumber = `55${number}@c.us`; // Formatting for whatsapp-web.js (adding 55 for Brazil country code to numbers that are already cleaned to just the area code and number)
-            // Wait, the numbers in my script were full numbers including 55. Let's check `clean_numbers.js` output.
-            // Oh, the output is `558288961063`. So it already has 55. 
-            // We just need `${number}@c.us`. I will fix this locally below.
-            
-            campaignProgress.currentNumber = number;
+    if (cleanedNumbers.length === 0) {
+        return res.status(400).json({ error: 'Nenhum número válido foi encontrado na lista informada.' });
+    }
 
-            try {
-                // Resolve the correct WhatsApp ID (handles Brazilian 9th digit issue)
-                let whatsappId;
+    if (!textToSend.trim() && (!files || files.length === 0)) {
+        return res.status(400).json({ error: 'Por favor, informe uma mensagem ou anexe ao menos uma foto.' });
+    }
+
+    addLog(`Iniciando envio para ${cleanedNumbers.length} contato(s)...`);
+
+    campaignProgress = {
+        total: cleanedNumbers.length,
+        sent: 0,
+        currentNumber: null,
+        inProgress: true
+    };
+
+    res.json({ message: 'Envio iniciado com sucesso', total: cleanedNumbers.length });
+
+    // Processamento em segundo plano
+    (async () => {
+        try {
+            for (let i = 0; i < cleanedNumbers.length; i++) {
+                const number = cleanedNumbers[i];
+                campaignProgress.currentNumber = number;
+
                 try {
-                    const contactId = await client.getNumberId(number);
-                    if (!contactId) {
-                        console.error(`Number not registered on WhatsApp: ${number}`);
-                        fs.appendFileSync(path.join(__dirname, 'erros_envio.txt'), `${number} - Não registrado no WhatsApp\n`);
-                        
-                        // Remove o número da lista para não tentar novamente
-                        let currentContacts = JSON.parse(fs.readFileSync(contactsPath, 'utf8'));
-                        currentContacts = currentContacts.filter(n => n !== number);
-                        fs.writeFileSync(contactsPath, JSON.stringify(currentContacts, null, 2));
-                        
-                        continue;
+                    const whatsappId = await resolveWhatsAppId(client, number);
+
+                    // 1. Enviar fotos (com a mensagem como legenda na última foto, se houver texto)
+                    if (files && files.length > 0) {
+                        for (let j = 0; j < files.length; j++) {
+                            const file = files[j];
+                            const ext = path.extname(file.originalname);
+                            const newPath = file.path + (ext ? ext : '.jpg');
+                            if (!fs.existsSync(newPath)) {
+                                fs.copyFileSync(file.path, newPath);
+                            }
+
+                            const media = MessageMedia.fromFilePath(newPath);
+
+                            if (j === files.length - 1 && textToSend.trim()) {
+                                await client.sendMessage(whatsappId, media, { caption: textToSend.trim() });
+                            } else {
+                                await client.sendMessage(whatsappId, media);
+                            }
+                            await delay(1500);
+                        }
+                    } else if (textToSend.trim()) {
+                        // Sem imagens, apenas mensagem de texto
+                        await client.sendMessage(whatsappId, textToSend.trim());
+                        await delay(1000);
                     }
-                    whatsappId = contactId._serialized;
+
+                    campaignProgress.sent++;
+                    addLog(`[${i + 1}/${cleanedNumbers.length}] Enviado com sucesso para ${number}`);
                 } catch (err) {
-                    console.warn(`getNumberId falhou para ${number} (${err.message}). Usando formato direto.`);
-                    whatsappId = `${number}@c.us`;
+                    console.error(`Erro ao enviar para ${number}:`, err.message);
+                    addLog(`[ERRO] Falha no envio para ${number}: ${err.message}`);
+                    fs.appendFileSync(path.join(__dirname, 'erros_envio.txt'), `${number} - Erro: ${err.message}\n`);
                 }
 
-                const mensagemSelecionada = spintaxMessages[i % spintaxMessages.length];
+                // Intervalo entre envios se houver mais de um número
+                if (i < cleanedNumbers.length - 1) {
+                    const waitTime = Math.floor(Math.random() * 3000) + 4000; // 4 a 7 segundos
+                    addLog(`Aguardando ${(waitTime / 1000).toFixed(1)}s antes do próximo envio...`);
+                    await delay(waitTime);
+                }
+            }
 
-                // 1. Send Images (with message as caption on the last image)
-                if (files && files.length > 0) {
-                    for (let j = 0; j < files.length; j++) {
-                        const file = files[j];
-                        
-                        // Renomear o arquivo para ter a extensão original, pois o WWebJS precisa dela
+            addLog(`Envio finalizado! Total enviados: ${campaignProgress.sent} de ${cleanedNumbers.length}`);
+        } catch (error) {
+            console.error('Erro geral no envio:', error);
+            addLog(`Erro geral no envio: ${error.message}`);
+        } finally {
+            campaignProgress.inProgress = false;
+            campaignProgress.currentNumber = null;
+
+            // Limpeza dos arquivos temporários enviados
+            if (files && files.length > 0) {
+                for (const file of files) {
+                    try {
+                        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
                         const ext = path.extname(file.originalname);
                         const newPath = file.path + (ext ? ext : '.jpg');
-                        if (!fs.existsSync(newPath)) {
-                            fs.copyFileSync(file.path, newPath);
-                        }
-                        
-                        const media = MessageMedia.fromFilePath(newPath);
-                        
-                        if (j === files.length - 1) {
-                            // Última imagem recebe a mensagem como legenda
-                            await client.sendMessage(whatsappId, media, { caption: mensagemSelecionada });
-                        } else {
-                            await client.sendMessage(whatsappId, media);
-                        }
-                        await delay(2000);
-                    }
-                } else {
-                    // Sem imagens, apenas envia o texto
-                    await client.sendMessage(whatsappId, mensagemSelecionada);
-                    await delay(2000);
+                        if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+                    } catch (e) {}
                 }
-                
-                campaignProgress.sent++;
-                console.log(`[${i + 1}/${contacts.length}] Sent to ${number}`);
-
-                // Remove o número da lista após o envio com sucesso
-                let currentContacts = JSON.parse(fs.readFileSync(contactsPath, 'utf8'));
-                currentContacts = currentContacts.filter(n => n !== number);
-                fs.writeFileSync(contactsPath, JSON.stringify(currentContacts, null, 2));
-            } catch (err) {
-                console.error(`Error sending to ${number}:`, err.message);
-                fs.appendFileSync(path.join(__dirname, 'erros_envio.txt'), `${number} - Erro: ${err.message}\n`);
-            }
-
-            if (i < contacts.length - 1) {
-                // Intervalo de 1 minuto a 1 minuto e 30 segundos (60000ms a 90000ms)
-                const waitTime = Math.floor(Math.random() * 30000) + 60000;
-                console.log(`Aguardando ${(waitTime / 60000).toFixed(2)} minutos para a próxima mensagem...`);
-                await delay(waitTime);
             }
         }
-
-        console.log('Campaign finished!');
-        campaignProgress.inProgress = false;
-        
-        // Cleanup uploaded files
-        if (files && files.length > 0) {
-            for (const file of files) {
-                try {
-                    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-                    const ext = path.extname(file.originalname);
-                    const newPath = file.path + (ext ? ext : '.jpg');
-                    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-                } catch (e) {}
-            }
-        }
-
-    } catch (error) {
-        console.error('Campaign error:', error);
-        campaignProgress.inProgress = false;
-    }
+    })();
 });
 
 app.listen(port, '0.0.0.0', () => {
